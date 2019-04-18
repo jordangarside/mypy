@@ -9410,3 +9410,26 @@ x: List[C] = [a.f(), a.f()]
 ==
 a.py:2: error: "C" expects 2 type arguments, but 1 given
 [builtins fixtures/list.pyi]
+
+[case testReexportNamedTupleChange]
+from m import M
+
+def f(x: M) -> None: ...
+
+f(M(0))
+
+[file m.py]
+from n import M
+
+[file n.py]
+from typing import NamedTuple
+M = NamedTuple('_N', [('x', int)])
+
+[file n.py.2]
+# change the line numbers
+from typing import NamedTuple
+M = NamedTuple('_N', [('x', int)])
+
+[builtins fixtures/tuple.pyi]
+[out]
+==
