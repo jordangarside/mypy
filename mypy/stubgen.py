@@ -170,7 +170,8 @@ class Options:
                  files: List[str],
                  verbose: bool,
                  quiet: bool,
-                 export_less: bool) -> None:
+                 export_less: bool,
+                 strict: bool) -> None:
         # See parse_options for descriptions of the flags.
         self.pyversion = pyversion
         self.no_import = no_import
@@ -188,6 +189,7 @@ class Options:
         self.verbose = verbose
         self.quiet = quiet
         self.export_less = export_less
+        self.strict = True
 
 
 class StubSource(BuildSource):
@@ -516,6 +518,7 @@ class StubGenerator(mypy.traverser.TraverserVisitor):
         self.defined_names = set()  # type: Set[str]
         # Short names of methods defined in the body of the current class
         self.method_names = set()  # type: Set[str]
+        self.default_type = "None"
 
     def visit_mypy_file(self, o: MypyFile) -> None:
         self.module = o.fullname  # Current module being processed
@@ -577,8 +580,8 @@ class StubGenerator(mypy.traverser.TraverserVisitor):
                     and not arg_.initializer
                     and not is_self_arg
                     and not is_cls_arg):
-                self.add_typing_import("Any")
-                annotation = ": {}".format(self.typing_name("Any"))
+                self.add_typing_import(self.default_type)
+                annotation = ": {}".format(self.typing_name(self.default_type))
             elif annotated_type and not is_self_arg:
                 annotation = ": {}".format(self.print_annotation(annotated_type))
             else:
@@ -607,13 +610,15 @@ class StubGenerator(mypy.traverser.TraverserVisitor):
         elif isinstance(o, FuncDef) and (o.is_abstract or o.name in METHODS_WITH_RETURN_VALUE):
             # Always assume abstract methods return Any unless explicitly annotated. Also
             # some dunder methods should not have a None return type.
-            retname = self.typing_name('Any')
-            self.add_typing_import("Any")
+            retname = self.typing_name(self.default_type)
+            self.add_typing_import(self.default_type)
         elif not has_return_statement(o) and not is_abstract:
             retname = 'None'
         retfield = ''
         if retname is not None:
             retfield = ' -> ' + retname
+        elif self.default_type == "None":
+            retfield = ' -> None'
 
         self.add(', '.join(args))
         self.add("){}: ...\n".format(retfield))
@@ -1075,11 +1080,11 @@ class StubGenerator(mypy.traverser.TraverserVisitor):
         if can_infer_optional and \
                 isinstance(rvalue, NameExpr) and rvalue.name == 'None':
             self.add_typing_import('Optional')
-            self.add_typing_import('Any')
+            self.add_typing_import(self.default_type)
             return '{}[{}]'.format(self.typing_name('Optional'),
-                                   self.typing_name('Any'))
-        self.add_typing_import('Any')
-        return self.typing_name('Any')
+                                   self.typing_name(self.default_type))
+        self.add_typing_import(self.default_type)
+        return self.typing_name(self.default_type)
 
     def print_annotation(self, t: Type) -> str:
         printer = AnnotationPrinter(self)
@@ -1516,6 +1521,8 @@ def parse_options(args: List[str]) -> Options:
                         help="generate stubs for package recursively; can be repeated")
     parser.add_argument(metavar='files', nargs='*', dest='files',
                         help="generate stubs for given files or directories")
+    parser.add_argument('--strict', action='store_true', default=False,
+                    help="generate stubs that use None instead of Any")
 
     ns = parser.parse_args(args)
 
@@ -1545,7 +1552,8 @@ def parse_options(args: List[str]) -> Options:
                    files=ns.files,
                    verbose=ns.verbose,
                    quiet=ns.quiet,
-                   export_less=ns.export_less)
+                   export_less=ns.export_less,
+                   strict=ns.strict)
 
 
 def main() -> None:
